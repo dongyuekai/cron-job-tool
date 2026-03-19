@@ -64,18 +64,20 @@ export class AiService {
     @Inject('QUERY_USER_TOOL') private readonly queryUserTool: any,
     @Inject('SEND_MAIL_TOOL') private readonly sendMailTool: any,
     @Inject('WEB_SEARCH_TOOL') private readonly webSearchTool: any,
+    @Inject('DB_USERS_CRUD_TOOL') private readonly dbUsersCrudTool: any,
   ) {
     this.modelWithTools = model.bindTools([
       this.queryUserTool,
       this.sendMailTool,
       this.webSearchTool,
+      this.dbUsersCrudTool,
     ]);
   }
 
   async runChain(query: string): Promise<string> {
     const messages: BaseMessage[] = [
       new SystemMessage(
-        '你是一个智能助手，可以在需要时调用工具（如 query_user)来查询用户信息，再用结果回答用户的问题。',
+        '你是一个智能助手。你可以按需调用工具：query_user（查询内存用户）、send_mail（发邮件）、web_search（联网搜索）、db_users_crud（数据库 users 增删改查）。当用户要求新增/查询/更新/删除数据库用户时，优先调用 db_users_crud，而不是直接说没有接口。',
       ),
       new HumanMessage(query),
     ];
@@ -124,6 +126,15 @@ export class AiService {
               content: result,
             }),
           );
+        } else if (toolName === 'db_users_crud') {
+          const result = await this.dbUsersCrudTool.invoke(toolCall.args);
+          messages.push(
+            new ToolMessage({
+              tool_call_id: toolCallId,
+              name: toolName,
+              content: result,
+            }),
+          );
         }
       }
     }
@@ -132,7 +143,7 @@ export class AiService {
   async *runChainStream(query: string): AsyncIterable<string> {
     const messages: BaseMessage[] = [
       new SystemMessage(
-        '你是一个智能助手，可以在需要时调用工具（如 query_user)来查询用户信息，再用结果回答用户的问题。',
+        '你是一个智能助手。你可以按需调用工具：query_user（查询内存用户）、send_mail（发邮件）、web_search（联网搜索）、db_users_crud（数据库 users 增删改查）。当用户要求新增/查询/更新/删除数据库用户时，优先调用 db_users_crud，而不是直接说没有接口。',
       ),
       new HumanMessage(query),
     ];
@@ -198,6 +209,15 @@ export class AiService {
           );
         } else if (toolName === 'web_search') {
           const result = await this.webSearchTool.invoke(toolCall.args);
+          messages.push(
+            new ToolMessage({
+              tool_call_id: toolCallId,
+              name: toolName,
+              content: result,
+            }),
+          );
+        } else if (toolName === 'db_users_crud') {
+          const result = await this.dbUsersCrudTool.invoke(toolCall.args);
           messages.push(
             new ToolMessage({
               tool_call_id: toolCallId,
