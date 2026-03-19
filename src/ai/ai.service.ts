@@ -38,28 +38,32 @@ type QueryUserArgs = {
   userId: string;
 };
 
-const queryUserTool = tool(
-  async ({ userId }: QueryUserArgs) => {
-    const user = database.users[userId];
-    if (!user) {
-      return `未找到用户，ID: ${userId}`;
-    }
-    return `用户信息 - ID: ${user.id}, Name: ${user.name}, Email: ${user.email}, Role: ${user.role}`;
-  },
-  {
-    name: 'query_user',
-    description:
-      '查询用户信息的工具，输入用户 ID，返回用户的详细信息（姓名、邮箱、角色）',
-    schema: queryUserArgsSchema,
-  },
-);
+// tool已经被提取到ai.module.ts里了 这里就注释掉了 以免重复定义
+// const queryUserTool = tool(
+//   async ({ userId }: QueryUserArgs) => {
+//     const user = database.users[userId];
+//     if (!user) {
+//       return `未找到用户，ID: ${userId}`;
+//     }
+//     return `用户信息 - ID: ${user.id}, Name: ${user.name}, Email: ${user.email}, Role: ${user.role}`;
+//   },
+//   {
+//     name: 'query_user',
+//     description:
+//       '查询用户信息的工具，输入用户 ID，返回用户的详细信息（姓名、邮箱、角色）',
+//     schema: queryUserArgsSchema,
+//   },
+// );
 
 @Injectable()
 export class AiService {
   private readonly modelWithTools: Runnable<BaseMessage[], AIMessage>;
 
-  constructor(@Inject('CHAT_MODEL') model: ChatOpenAI) {
-    this.modelWithTools = model.bindTools([queryUserTool]);
+  constructor(
+    @Inject('CHAT_MODEL') model: ChatOpenAI,
+    @Inject('QUERY_USER_TOOL') private readonly queryUserTool: any,
+  ) {
+    this.modelWithTools = model.bindTools([this.queryUserTool]);
   }
 
   async runChain(query: string): Promise<string> {
@@ -86,8 +90,9 @@ export class AiService {
         const toolName = toolCall.name;
 
         if (toolName === 'query_user') {
-          const args = queryUserArgsSchema.parse(toolCall.args);
-          const result = await queryUserTool.invoke(args);
+          // const args = queryUserArgsSchema.parse(toolCall.args);
+          // const result = await queryUserTool.invoke(args);
+          const result = await this.queryUserTool.invoke(toolCall.args);
           messages.push(
             new ToolMessage({
               tool_call_id: toolCallId,
@@ -146,8 +151,10 @@ export class AiService {
         const toolCallId = toolCall.id || '';
         const toolName = toolCall.name;
         if (toolName === 'query_user') {
-          const args = queryUserArgsSchema.parse(toolCall.args);
-          const result = await queryUserTool.invoke(args);
+          // const args = queryUserArgsSchema.parse(toolCall.args);
+          // const result = await queryUserTool.invoke(args);
+
+          const result = await this.queryUserTool.invoke(toolCall.args);
 
           messages.push(
             new ToolMessage({
