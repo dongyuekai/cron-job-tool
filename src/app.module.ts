@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Inject, Module, OnApplicationBootstrap } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AiModule } from './ai/ai.module';
@@ -9,6 +9,12 @@ import { join } from 'path';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from './users/users.module';
 import { User } from './users/entities/user.entity';
+import {
+  CronExpression,
+  ScheduleModule,
+  SchedulerRegistry,
+} from '@nestjs/schedule';
+import { CronJob } from 'cron';
 
 @Module({
   imports: [
@@ -51,9 +57,42 @@ import { User } from './users/entities/user.entity';
       logging: true,
       entities: [User],
     }),
+    // 定时任务模块
+    ScheduleModule.forRoot(),
     UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements OnApplicationBootstrap {
+  @Inject(SchedulerRegistry)
+  schedulerRegistry: SchedulerRegistry;
+
+  // 应用启动时注册一些定时任务的示例
+  async onApplicationBootstrap() {
+    const job = new CronJob(CronExpression.EVERY_SECOND, () => {
+      console.log('每秒执行一次的定时任务');
+    });
+    this.schedulerRegistry.addCronJob('job_every_second', job);
+    job.start();
+    setTimeout(() => {
+      this.schedulerRegistry.deleteCronJob('job_every_second');
+    }, 5000);
+
+    const intervalRef = setInterval(() => {
+      console.log('run interval job');
+    }, 1000);
+    this.schedulerRegistry.addInterval('interval_job', intervalRef);
+    setTimeout(() => {
+      this.schedulerRegistry.deleteInterval('interval_job');
+    }, 5000);
+
+    const timeoutRef = setTimeout(() => {
+      console.log('run timeout job');
+    }, 5000);
+    this.schedulerRegistry.addTimeout('timeout_job', timeoutRef);
+    setTimeout(() => {
+      this.schedulerRegistry.deleteTimeout('timeout_job');
+    }, 5000);
+  }
+}
