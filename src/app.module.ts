@@ -15,6 +15,8 @@ import {
   SchedulerRegistry,
 } from '@nestjs/schedule';
 import { CronJob } from 'cron';
+import { JobModule } from './job/job.module';
+import { Job } from './job/entities/job.entity';
 
 @Module({
   imports: [
@@ -55,11 +57,12 @@ import { CronJob } from 'cron';
       synchronize: true, // true 表示在服务启动的时候自动建表
       connectorPackage: 'mysql2',
       logging: true,
-      entities: [User],
+      entities: [User, Job],
     }),
     // 定时任务模块
     ScheduleModule.forRoot(),
     UsersModule,
+    JobModule,
   ],
   controllers: [AppController],
   providers: [AppService],
