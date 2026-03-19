@@ -12,31 +12,31 @@ import {
 import { z } from 'zod';
 import { Runnable } from '@langchain/core/runnables';
 
-const database = {
-  users: {
-    '001': {
-      id: '001',
-      name: 'Alice',
-      email: 'alice@example.com',
-      role: 'admin',
-    },
-    '002': { id: '002', name: 'Bob', email: 'bob@example.com', role: 'user' },
-    '003': {
-      id: '003',
-      name: 'Charlie',
-      email: 'charlie@example.com',
-      role: 'user',
-    },
-  },
-};
+// const database = {
+//   users: {
+//     '001': {
+//       id: '001',
+//       name: 'Alice',
+//       email: 'alice@example.com',
+//       role: 'admin',
+//     },
+//     '002': { id: '002', name: 'Bob', email: 'bob@example.com', role: 'user' },
+//     '003': {
+//       id: '003',
+//       name: 'Charlie',
+//       email: 'charlie@example.com',
+//       role: 'user',
+//     },
+//   },
+// };
 
-const queryUserArgsSchema = z.object({
-  userId: z.string().describe('用户 ID, 例如：001， 002，003'),
-});
+// const queryUserArgsSchema = z.object({
+//   userId: z.string().describe('用户 ID, 例如：001， 002，003'),
+// });
 
-type QueryUserArgs = {
-  userId: string;
-};
+// type QueryUserArgs = {
+//   userId: string;
+// };
 
 // tool已经被提取到ai.module.ts里了 这里就注释掉了 以免重复定义
 // const queryUserTool = tool(
@@ -62,8 +62,12 @@ export class AiService {
   constructor(
     @Inject('CHAT_MODEL') model: ChatOpenAI,
     @Inject('QUERY_USER_TOOL') private readonly queryUserTool: any,
+    @Inject('SEND_MAIL_TOOL') private readonly sendMailTool: any,
   ) {
-    this.modelWithTools = model.bindTools([this.queryUserTool]);
+    this.modelWithTools = model.bindTools([
+      this.queryUserTool,
+      this.sendMailTool,
+    ]);
   }
 
   async runChain(query: string): Promise<string> {
@@ -93,6 +97,15 @@ export class AiService {
           // const args = queryUserArgsSchema.parse(toolCall.args);
           // const result = await queryUserTool.invoke(args);
           const result = await this.queryUserTool.invoke(toolCall.args);
+          messages.push(
+            new ToolMessage({
+              tool_call_id: toolCallId,
+              name: toolName,
+              content: result,
+            }),
+          );
+        } else if (toolName === 'send_mail') {
+          const result = await this.sendMailTool.invoke(toolCall.args);
           messages.push(
             new ToolMessage({
               tool_call_id: toolCallId,
@@ -156,6 +169,15 @@ export class AiService {
 
           const result = await this.queryUserTool.invoke(toolCall.args);
 
+          messages.push(
+            new ToolMessage({
+              tool_call_id: toolCallId,
+              name: toolName,
+              content: result,
+            }),
+          );
+        } else if (toolName === 'send_mail') {
+          const result = await this.sendMailTool.invoke(toolCall.args);
           messages.push(
             new ToolMessage({
               tool_call_id: toolCallId,
