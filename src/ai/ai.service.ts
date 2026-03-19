@@ -3,6 +3,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { tool } from '@langchain/core/tools';
 import {
   AIMessage,
+  AIMessageChunk,
   BaseMessage,
   HumanMessage,
   SystemMessage,
@@ -87,6 +88,67 @@ export class AiService {
         if (toolName === 'query_user') {
           const args = queryUserArgsSchema.parse(toolCall.args);
           const result = await queryUserTool.invoke(args);
+          messages.push(
+            new ToolMessage({
+              tool_call_id: toolCallId,
+              name: toolName,
+              content: result,
+            }),
+          );
+        }
+      }
+    }
+  }
+
+  async *runChainStream(query: string): AsyncIterable<string> {
+    const messages: BaseMessage[] = [
+      new SystemMessage(
+        '你是一个智能助手，可以在需要时调用工具（如 query_user)来查询用户信息，再用结果回答用户的问题。',
+      ),
+      new HumanMessage(query),
+    ];
+
+    while (true) {
+      // 一轮对话：先让模型思考并可能提出工具调用
+      const stream = await this.modelWithTools.stream(messages);
+
+      let fullAIMessage: AIMessageChunk | null = null;
+
+      for await (const chunk of stream as AsyncIterable<AIMessageChunk>) {
+        // 使用concat持续拼接 得到本轮完整的 AIMessageChunk
+        fullAIMessage = fullAIMessage ? fullAIMessage.concat(chunk) : chunk;
+
+        const hasToolCallChunk =
+          !!fullAIMessage.tool_call_chunks &&
+          fullAIMessage.tool_call_chunks.length > 0;
+
+        // 只要当前轮次还没出现tool调用的chunk 就可以把文本内容流式往外推
+        if (!hasToolCallChunk && chunk.content) {
+          yield chunk.content as string;
+        }
+      }
+
+      if (!fullAIMessage) {
+        return;
+      }
+
+      messages.push(fullAIMessage);
+
+      const toolCalls = fullAIMessage.tool_calls ?? [];
+
+      // 没有工具调用：说明这一轮就是最终回答 已经在上面的for-await里面流式返回了 直接结束即可
+      if (!toolCalls.length) {
+        return;
+      }
+
+      // 有工具调用 依次执行工具调用 生成ToolMessage 进入下一轮
+      for (const toolCall of toolCalls) {
+        const toolCallId = toolCall.id || '';
+        const toolName = toolCall.name;
+        if (toolName === 'query_user') {
+          const args = queryUserArgsSchema.parse(toolCall.args);
+          const result = await queryUserTool.invoke(args);
+
           messages.push(
             new ToolMessage({
               tool_call_id: toolCallId,
