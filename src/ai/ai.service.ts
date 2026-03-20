@@ -52,6 +52,32 @@ import { Runnable } from '@langchain/core/runnables';
 export class AiService {
   private readonly modelWithTools: Runnable<BaseMessage[], AIMessage>;
 
+  private extractEmails(text: string): string[] {
+    const matches = text.match(
+      /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
+    );
+    return (matches ?? []).map((v) => v.toLowerCase());
+  }
+
+  private forceRecipientIntoInstruction(query: string, args: any): any {
+    if (!args || typeof args !== 'object') return args;
+    if (args.action !== 'add') return args;
+    if (typeof args.instruction !== 'string') return args;
+
+    const queryEmails = this.extractEmails(query);
+    if (!queryEmails.length) return args;
+
+    const instruction = String(args.instruction);
+    const instructionEmails = this.extractEmails(instruction);
+    if (instructionEmails.length) return args;
+
+    const mergedInstruction = `${instruction}，收件人邮箱：${queryEmails.join(', ')}`;
+    return {
+      ...args,
+      instruction: mergedInstruction,
+    };
+  }
+
   constructor(
     @Inject('CHAT_MODEL') model: ChatOpenAI,
     @Inject('QUERY_USER_TOOL') private readonly queryUserTool: any,
@@ -159,7 +185,11 @@ export class AiService {
             }),
           );
         } else if (toolName === 'cron_job') {
-          const result = await this.cronJobTool.invoke(toolCall.args);
+          const guardedArgs = this.forceRecipientIntoInstruction(
+            query,
+            toolCall.args,
+          );
+          const result = await this.cronJobTool.invoke(guardedArgs);
 
           messages.push(
             new ToolMessage({
@@ -286,7 +316,11 @@ export class AiService {
             }),
           );
         } else if (toolName === 'cron_job') {
-          const result = await this.cronJobTool.invoke(toolCall.args);
+          const guardedArgs = this.forceRecipientIntoInstruction(
+            query,
+            toolCall.args,
+          );
+          const result = await this.cronJobTool.invoke(guardedArgs);
 
           messages.push(
             new ToolMessage({
