@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { AiController } from './ai.controller';
 import { ConfigService } from '@nestjs/config';
@@ -60,6 +60,7 @@ import { UsersService } from 'src/users/users.service';
         mailerService: MailerService,
         configService: ConfigService,
       ) => {
+        const logger = new Logger('SEND_MAIL_TOOL');
         const sendMailArgsSchema = z.object({
           to: z.email().describe('收件人邮箱地址，例如：example@example.com'),
           subject: z.string().describe('邮件主题'),
@@ -79,15 +80,40 @@ import { UsersService } from 'src/users/users.service';
             html?: string;
           }) => {
             const fallbackFrom = configService.get<string>('MAIL_FROM');
-            await mailerService.sendMail({
-              to,
-              subject,
-              text: text ?? '（无文本内容）',
-              html: html ?? `<p>${text ?? '（无 HTML 内容）'}</p>`,
-              from: fallbackFrom,
-            });
+            try {
+              const info = await mailerService.sendMail({
+                to,
+                subject,
+                text: text ?? '（无文本内容）',
+                html: html ?? `<p>${text ?? '（无 HTML 内容）'}</p>`,
+                from: fallbackFrom,
+              });
 
-            return `邮件已发送到 ${to}，主题为「${subject}」`;
+              const accepted = Array.isArray(info.accepted)
+                ? info.accepted.join(', ')
+                : '';
+              const rejected = Array.isArray(info.rejected)
+                ? info.rejected.join(', ')
+                : '';
+
+              if (rejected) {
+                logger.warn(
+                  `SMTP 拒收: to=${to}, rejected=${rejected}, response=${info.response ?? ''}`,
+                );
+                return `邮件发送失败：SMTP 拒收收件人 ${rejected}。服务端响应：${info.response ?? '无'}`;
+              }
+
+              logger.log(
+                `邮件已提交 SMTP: to=${to}, accepted=${accepted}, messageId=${info.messageId ?? ''}`,
+              );
+
+              return `邮件已提交 SMTP 服务器。收件人: ${accepted || to}；messageId: ${info.messageId ?? '无'}；响应: ${info.response ?? '无'}`;
+            } catch (error) {
+              const msg =
+                error instanceof Error ? error.message : String(error);
+              logger.error(`邮件发送异常: to=${to}, error=${msg}`);
+              return `邮件发送失败：${msg}`;
+            }
           },
           {
             name: 'send_mail',

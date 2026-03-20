@@ -165,7 +165,7 @@
       };
 
       es.onerror = () => {
-        statusEl.textContent = '状态：连接结束或发生错误';
+        statusEl.textContent = '状态：连接已结束（若后端无异常日志通常属正常）';
         closeEventSource();
       };
     };

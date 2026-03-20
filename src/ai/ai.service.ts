@@ -59,6 +59,13 @@ import { Runnable } from '@langchain/core/runnables';
 export class AiService {
   private readonly modelWithTools: Runnable<BaseMessage[], AIMessage>;
 
+  private isLikelyMailRequest(query: string): boolean {
+    const q = query.toLowerCase();
+    return (
+      /(发|发送).{0,6}(邮件|邮箱)|email|mail|smtp/.test(q) || /@[\w.-]+/.test(q)
+    );
+  }
+
   constructor(
     @Inject('CHAT_MODEL') model: ChatOpenAI,
     @Inject('QUERY_USER_TOOL') private readonly queryUserTool: any,
@@ -75,9 +82,13 @@ export class AiService {
   }
 
   async runChain(query: string): Promise<string> {
+    const likelyMailRequest = this.isLikelyMailRequest(query);
+    let sendMailInvoked = false;
+    let mailToolRetryHintUsed = false;
+
     const messages: BaseMessage[] = [
       new SystemMessage(
-        '你是一个智能助手。你可以按需调用工具：query_user（查询内存用户）、send_mail（发邮件）、web_search（联网搜索）、db_users_crud（数据库 users 增删改查）。当用户要求新增/查询/更新/删除数据库用户时，优先调用 db_users_crud，而不是直接说没有接口。',
+        '你是一个智能助手。你可以按需调用工具：query_user（查询内存用户）、send_mail（发邮件）、web_search（联网搜索）、db_users_crud（数据库 users 增删改查）。当用户要求新增/查询/更新/删除数据库用户时，优先调用 db_users_crud，而不是直接说没有接口。只要用户明确有“发送邮件”的需求，你必须先调用 send_mail 工具，并基于工具返回结果作答，不能在未调用工具时声称“已发送”。',
       ),
       new HumanMessage(query),
     ];
@@ -89,6 +100,15 @@ export class AiService {
       const toolCalls = aiMessage.tool_calls ?? [];
       // 没有要调用的工具 直接把回答返回给调用方
       if (!toolCalls.length) {
+        if (likelyMailRequest && !sendMailInvoked && !mailToolRetryHintUsed) {
+          mailToolRetryHintUsed = true;
+          messages.push(
+            new HumanMessage(
+              '你还没有调用 send_mail 工具。请先调用 send_mail，并根据工具返回结果给出最终答复。',
+            ),
+          );
+          continue;
+        }
         return aiMessage.content as string;
       }
 
@@ -109,6 +129,7 @@ export class AiService {
             }),
           );
         } else if (toolName === 'send_mail') {
+          sendMailInvoked = true;
           const result = await this.sendMailTool.invoke(toolCall.args);
           messages.push(
             new ToolMessage({
@@ -141,9 +162,13 @@ export class AiService {
   }
 
   async *runChainStream(query: string): AsyncIterable<string> {
+    const likelyMailRequest = this.isLikelyMailRequest(query);
+    let sendMailInvoked = false;
+    let mailToolRetryHintUsed = false;
+
     const messages: BaseMessage[] = [
       new SystemMessage(
-        '你是一个智能助手。你可以按需调用工具：query_user（查询内存用户）、send_mail（发邮件）、web_search（联网搜索）、db_users_crud（数据库 users 增删改查）。当用户要求新增/查询/更新/删除数据库用户时，优先调用 db_users_crud，而不是直接说没有接口。',
+        '你是一个智能助手。你可以按需调用工具：query_user（查询内存用户）、send_mail（发邮件）、web_search（联网搜索）、db_users_crud（数据库 users 增删改查）。当用户要求新增/查询/更新/删除数据库用户时，优先调用 db_users_crud，而不是直接说没有接口。只要用户明确有“发送邮件”的需求，你必须先调用 send_mail 工具，并基于工具返回结果作答，不能在未调用工具时声称“已发送”。',
       ),
       new HumanMessage(query),
     ];
@@ -178,6 +203,15 @@ export class AiService {
 
       // 没有工具调用：说明这一轮就是最终回答 已经在上面的for-await里面流式返回了 直接结束即可
       if (!toolCalls.length) {
+        if (likelyMailRequest && !sendMailInvoked && !mailToolRetryHintUsed) {
+          mailToolRetryHintUsed = true;
+          messages.push(
+            new HumanMessage(
+              '你还没有调用 send_mail 工具。请先调用 send_mail，并根据工具返回结果给出最终答复。',
+            ),
+          );
+          continue;
+        }
         return;
       }
 
@@ -199,6 +233,7 @@ export class AiService {
             }),
           );
         } else if (toolName === 'send_mail') {
+          sendMailInvoked = true;
           const result = await this.sendMailTool.invoke(toolCall.args);
           messages.push(
             new ToolMessage({
